@@ -133,7 +133,18 @@ app.post("/class", authMiddleware, teacherMiddleware, async (req, res) => {
 
     const classDb = await classModel.create({
         className: data.className,
-        teacherId: 
+        teacherId: req.userId,
+        studentIds: []
+    })
+
+    res.json({
+        "success": true,
+        "data": {
+            "_id": classDb._id,
+            "className": classDb.className,
+            "teacherId": classDb.teacherId,
+            "studentIds": []
+        }
     })
 })
 
