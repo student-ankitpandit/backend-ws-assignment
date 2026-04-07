@@ -1,8 +1,9 @@
 import express from "express";
-import { CreateClassSchema, signinSchema, signupSchema } from "./types";
+import { AddStudentSchema, CreateClassSchema, signinSchema, signupSchema } from "./types";
 import { userModel, classModel } from "./model";
 import jwt from "jsonwebtoken"
 import { authMiddleware, teacherMiddleware } from "./middleware";
+import mongoose from "mongoose"
 
 const app = express();
 
@@ -14,7 +15,6 @@ app.get("/", (req, res) => {
     res.send(`hi, you're on the home page`);
 })
 
-//signup up endpoint
 app.post("/auth/signup", async (req, res) => {
 
     const {success, data} = signupSchema.safeParse(req.body)
@@ -146,6 +146,55 @@ app.post("/class", authMiddleware, teacherMiddleware, async (req, res) => {
             "studentIds": []
         }
     })
+})
+
+app.post("/class/:id/add-student", authMiddleware, teacherMiddleware, async (req, res) => {
+    const {success, data} = AddStudentSchema.safeParse(req.body)
+
+    if(!success) {
+        res.status(400).json({
+            "success": false,
+            "error": "Invalid request schema",
+        })
+        return
+    }
+
+    const studentId = data.studentId
+
+    if(!studentId) {
+        res.status(400).json({
+            "success": false,
+            "error": "Student Id is required"
+        })
+        return
+    }
+
+    const classDb = await classModel.findOne({
+        _id: req.params._id
+    })
+
+    if(!classDb) {
+        res.status(404).json({
+            "success": false,
+            "error": "Class not found",
+        })
+        return
+    }
+
+    const userDb = await userModel.findOne({
+        _id: studentId
+    })
+
+    if(!userDb) {
+        res.status(404).json({
+            "success": false,
+            "error": "Student not found",
+        })
+        return
+    }
+
+    classDb.studentIds.push(new mongoose.Types.ObjectId(studentId))
+    await classDb.save()
 })
 
 
