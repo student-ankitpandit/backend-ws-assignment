@@ -34,7 +34,7 @@ const attendenceSchema = new mongoose.Schema({
         type: mongoose.Types.ObjectId,
         ref: "Users"
     },
-    stautus: {
+    status: {
         type: String,
         enum: [ 'absent', 'present' ]
     },

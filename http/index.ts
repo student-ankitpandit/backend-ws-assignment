@@ -2,7 +2,7 @@ import express from "express";
 import { AddStudentSchema, CreateClassSchema, signinSchema, signupSchema } from "./types";
 import { userModel, classModel } from "./model";
 import jwt from "jsonwebtoken"
-import { authMiddleware, teacherMiddleware } from "./middleware";
+import { authMiddleware, teacherRoleMiddleware } from "./middleware";
 import mongoose from "mongoose"
 
 const app = express();
@@ -119,7 +119,7 @@ app.post("/me", authMiddleware, async (req, res) => {
     })
 })
 
-app.post("/class", authMiddleware, teacherMiddleware, async (req, res) => {
+app.post("/class", authMiddleware, teacherRoleMiddleware, async (req, res) => {
     const {success, data} = CreateClassSchema.safeParse(req.body)
 
     if(!success) {
@@ -147,7 +147,7 @@ app.post("/class", authMiddleware, teacherMiddleware, async (req, res) => {
     })
 })
 
-app.post("/class/:id/add-student", authMiddleware, teacherMiddleware, async (req, res) => {
+app.post("/class/:id/add-student", authMiddleware, teacherRoleMiddleware, async (req, res) => {
     const {success, data} = AddStudentSchema.safeParse(req.body)
 
     if(!success) {
@@ -228,23 +228,21 @@ app.get("/class/:id", authMiddleware, async (req, res) => {
     }
 
     if(classDb.teacherId === req.userId || classDb.studentIds.map(x => x.toString()).includes(req.userId!)) {
-        const students = await userModel.findOne({
+        const students = await userModel.find({
             _id: classDb.studentIds
         })
 
         res.status(200).json({
-            "success": true,
-            "data": {
-            "_id": classDb._id,
-            "className": classDb.className,
-            "teacherId": classDb.teacherId,
-            "students": [
-                    {
-                        "_id": students?._id,
-                        "name": students?.name,
-                        "email": students?.email
-                    }
-                ]
+            success: true,
+            data: {
+            _id: classDb._id,
+            className: classDb.className,
+            teacherId: classDb.teacherId,
+            students: students.map(s => ({
+                    _id: s._id,
+                    name: s.name,
+                    email: s.email
+                }))
             }
         })
     } else {
@@ -256,6 +254,24 @@ app.get("/class/:id", authMiddleware, async (req, res) => {
     }
 })
 
+app.get("/students", authMiddleware, teacherRoleMiddleware, async (req, res) => {
+    const users = await userModel.find({
+        role: "student"
+    })
+
+    res.status(200).json({
+        success: false,
+        data: users.map(u => ({
+            _id: u._id,
+            name: u.name,
+            email: u.email
+        }))
+    })
+})
+
+app.get("/class/:id/my-attendence", authMiddleware, async (req, res) => {
+    
+})
 
 app.listen(PORT, () => {
     console.log(`server is up and running on port ${PORT}`)
