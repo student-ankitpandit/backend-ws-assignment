@@ -1,9 +1,11 @@
 import express from "express";
-import { AddStudentSchema, CreateClassSchema, signinSchema, signupSchema } from "./types";
-import { userModel, classModel } from "./model";
+import { AddStudentSchema, CreateClassSchema, newAttendenceSchema, signinSchema, signupSchema } from "./types";
+import { userModel, classModel, attendenceModel } from "./model";
 import jwt from "jsonwebtoken"
 import { authMiddleware, teacherRoleMiddleware } from "./middleware";
 import mongoose from "mongoose"
+
+let activeSession: { classId: string, startedAt: Date, attendence: Record<string, string> } | null =  null
 
 const app = express();
 
@@ -270,7 +272,69 @@ app.get("/students", authMiddleware, teacherRoleMiddleware, async (req, res) => 
 })
 
 app.get("/class/:id/my-attendence", authMiddleware, async (req, res) => {
-    
+    const classId = req.params._id
+    const userId = req.userId
+
+    const attendence = await attendenceModel.findOne({
+        classId,
+        studentId: userId
+    })
+
+    if(!attendence) {
+        res.json({
+            "success": true,
+            "data": {
+                "classId": classId,
+                "status": "present"
+            }
+        })
+    } else {
+        res.json({
+            "success": true,
+            "data": {
+                "classId": classId,
+                "status": null
+            }
+        })
+    }
+})
+
+app.post("/attendence/start", authMiddleware, teacherRoleMiddleware, async(req, res) => {
+    const {success, data} = newAttendenceSchema.safeParse(req.body)
+
+    if(!success) {
+        res.status(400).json({
+            success: false,
+            "error": "Invalid request schema",
+        })
+        return
+    }
+
+    const classDb = await classModel.findOne({
+        _id: data.classId
+    })
+
+    if(!classDb || classDb.teacherId !== req.userId) {
+        res.status(401).json({
+            success: false,
+            "error": "Forbidden, not class teacher"
+        })
+        return
+    }
+
+    activeSession = {
+        classId: classDb._id.toString(),
+        startedAt: new Date(),
+        attendence: {}
+    }
+
+    res.json({
+        "success": true,
+        "data": {
+            "classId": classDb._id,
+            "startedAt": activeSession.startedAt
+        }
+    })
 })
 
 app.listen(PORT, () => {
