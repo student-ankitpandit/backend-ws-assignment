@@ -21,13 +21,12 @@ app.post("/auth/signup", async (req, res) => {
 
     if(!success) {
         res.status(400).json({
-            "success": false,
+            success: false,
             "message": "Invalid request Schema"
         })
         return
     }
 
-    //validation check
     const alreadyexistedUser = await userModel.findOne({
         email: data.email
     })
@@ -65,7 +64,7 @@ app.post("/auth/login", async(req, res) => {
 
     if(!success) {
         res.status(400).json({
-            "success": false,
+            success: false,
             "error": "Invalid request schema",
         })
         return
@@ -103,7 +102,7 @@ app.post("/me", authMiddleware, async (req, res) => {
 
     if(!userDb) {
         res.status(400).json({
-            "success": false,
+            success: false,
             "error": "User not found"
         })
         return
@@ -125,7 +124,7 @@ app.post("/class", authMiddleware, teacherMiddleware, async (req, res) => {
 
     if(!success) {
         res.status(400).json({
-            "success": false,
+            success: false,
             "error": "Invalid request schema",
         })
         return
@@ -138,7 +137,7 @@ app.post("/class", authMiddleware, teacherMiddleware, async (req, res) => {
     })
 
     res.json({
-        "success": true,
+        success: true,
         "data": {
             "_id": classDb._id,
             "className": classDb.className,
@@ -153,7 +152,7 @@ app.post("/class/:id/add-student", authMiddleware, teacherMiddleware, async (req
 
     if(!success) {
         res.status(400).json({
-            "success": false,
+            success: false,
             "error": "Invalid request schema",
         })
         return
@@ -163,21 +162,29 @@ app.post("/class/:id/add-student", authMiddleware, teacherMiddleware, async (req
 
     if(!studentId) {
         res.status(400).json({
-            "success": false,
+            success: false,
             "error": "Student Id is required"
         })
         return
     }
-
+    
     const classDb = await classModel.findOne({
         _id: req.params._id
     })
-
+    
     if(!classDb) {
         res.status(404).json({
-            "success": false,
+            success: false,
             "error": "Class not found",
         })
+        return
+    }
+
+    if(classDb.teacherId != req.userId) {
+        res.status(403).json({
+            success: false,
+            "error": "Forbidden, not class teacher"
+          })
         return
     }
 
@@ -187,7 +194,7 @@ app.post("/class/:id/add-student", authMiddleware, teacherMiddleware, async (req
 
     if(!userDb) {
         res.status(404).json({
-            "success": false,
+            success: false,
             "error": "Student not found",
         })
         return
@@ -195,6 +202,58 @@ app.post("/class/:id/add-student", authMiddleware, teacherMiddleware, async (req
 
     classDb.studentIds.push(new mongoose.Types.ObjectId(studentId))
     await classDb.save()
+
+    res.json({
+        success: true,
+        "data": {
+            "_id": classDb._id,
+            "className": classDb.className,
+            "teacherId": classDb.teacherId,
+            "studentIds": classDb.studentIds
+        }
+    })
+})
+
+app.get("/class/:id", authMiddleware, async (req, res) => {
+    const classDb = await classModel.findOne({
+        _id: req.params._id
+    })
+
+    if(!classDb) {
+        res.status(404).json({
+            success: false,
+            "error": "Class not found"
+        })
+        return
+    }
+
+    if(classDb.teacherId === req.userId || classDb.studentIds.map(x => x.toString()).includes(req.userId!)) {
+        const students = await userModel.findOne({
+            _id: classDb.studentIds
+        })
+
+        res.status(200).json({
+            "success": true,
+            "data": {
+            "_id": classDb._id,
+            "className": classDb.className,
+            "teacherId": classDb.teacherId,
+            "students": [
+                    {
+                        "_id": students?._id,
+                        "name": students?.name,
+                        "email": students?.email
+                    }
+                ]
+            }
+        })
+    } else {
+        res.status(403).json({
+            "success": false,
+            "error": "Forbidden, not class teacher or not a student of this class"
+        })
+        return
+    }
 })
 
 
