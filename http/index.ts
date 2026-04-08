@@ -31,32 +31,44 @@ app.ws('/ws', function (ws, req) {
         })
         ws.on('message', async function(msg) {
             const message = msg.toString()
-            const parseData = JSON.parse(message)
-            switch (parseData.event) {
+
+            let parsedData;
+            try {
+                parsedData = JSON.parse(message)
+            } catch (error) {
+                // console.log(error)
+            }
+
+            if(!parsedData) {
+                return
+            }
+
+            if(!activeSession) {
+                ws.send(JSON.stringify({
+                    "event": "ERROR",
+                    "data": {
+                        "message": "No active attendance session"
+                    }
+                }))
+                return
+            }
+
+            switch (parsedData.event) {
                 case "ATTENDANCE_MARKED":
                     if(ws.user.role === "teacher" && ws.user.useId === activeSession?.teacherId) {
-                        if(!activeSession) {
-                            ws.send(JSON.stringify({
-                                "event": "ERROR",
-                                data: {
-                                   "error": "No active session" 
-                                }
-                            }))
+                        activeSession.attendance[parsedData.data.studentId] = parsedData.data.status;
+                        allWs.map(ws => ws.send(JSON.stringify({
+                            "event": "ATTENDANCE_MARKED",
+                            "data": {
+                                "studentId": parsedData.data.studentId,
+                                "status": parsedData.data.status
+                            }
+                        })))
                         } else {
-                            activeSession.attendance[parseData.data.studentId] = parseData.data.status;
-                            allWs.map(ws => ws.send(JSON.stringify({
-                                "event": "ATTENDANCE_MARKED",
-                                "data": {
-                                    "studentId": parseData.data.studentId,
-                                    "status": parseData.data.status
-                                }
-                            })))
-                        }
-                    } else {
                         ws.send(JSON.stringify({
                             "event": "ERROR",
                             "data": {
-                                "message": "You're not a class teacher"
+                                "message": "Forbidden, teacher event only"
                             }
                         }))
                     }
@@ -83,7 +95,7 @@ app.ws('/ws', function (ws, req) {
                             ws.send(JSON.stringify({
                                 "event": "ERROR",
                                 "data": {
-                                    "message": "You're not a class teacher"
+                                    "message": "Forbidden, teacher event only"
                                 }
                             }))
                         }
@@ -107,6 +119,13 @@ app.ws('/ws', function (ws, req) {
                                         }}
                                     ))
                                 }
+                            } else {
+                                ws.send(JSON.stringify({
+                                    "event": "MY_ATTENDANCE",
+                                    "data": {
+                                        "message": "Forbidden, student event only"
+                                    }}
+                                ))
                             }
                             break;
                             case "DONE":
@@ -154,7 +173,7 @@ app.ws('/ws', function (ws, req) {
         ws.send(JSON.stringify({
             "event": "ERROR",
             "data": {
-                "message": "You're not a class teacher"
+                "message": "Forbidden, teacher event only"
             }
         }))
         ws.close()
