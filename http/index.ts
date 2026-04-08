@@ -1,17 +1,169 @@
 import express from "express";
 import { AddStudentSchema, CreateClassSchema, newAttendenceSchema, signinSchema, signupSchema } from "./types";
-import { userModel, classModel, attendenceModel } from "./model";
-import jwt from "jsonwebtoken"
+import { UserModel, ClassModel, AttendanceModel } from "./model";
+import jwt, { type JwtPayload } from "jsonwebtoken"
 import { authMiddleware, teacherRoleMiddleware } from "./middleware";
 import mongoose from "mongoose"
+import expressWs from "express-ws"
 
-let activeSession: { classId: string, startedAt: Date, attendence: Record<string, string> } | null =  null
+
+let activeSession: { classId: string, startedAt: Date, attendance: Record<string, string>, teacherId: string } | null =  null
+let allWs: any[] = []
 
 const app = express();
+expressWs(app)
+
+app.ws('/ws', function (ws, req) {
+    try {
+        const token = req.query.token
+
+        const {userId, role} = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload
+
+        ws.user = {
+            userId, 
+            role
+        }
+
+        allWs.push(ws)
+
+        ws.on("close", () => {
+            allWs = allWs.filter(x => x !== ws)
+        })
+        ws.on('message', async function(msg) {
+            const message = msg.toString()
+            const parseData = JSON.parse(message)
+            switch (parseData.event) {
+                case "ATTENDANCE_MARKED":
+                    if(ws.user.role === "teacher" && ws.user.useId === activeSession?.teacherId) {
+                        if(!activeSession) {
+                            ws.send(JSON.stringify({
+                                "event": "ERROR",
+                                data: {
+                                   "error": "No active session" 
+                                }
+                            }))
+                        } else {
+                            activeSession.attendance[parseData.data.studentId] = parseData.data.status;
+                            allWs.map(ws => ws.send(JSON.stringify({
+                                "event": "ATTENDANCE_MARKED",
+                                "data": {
+                                    "studentId": parseData.data.studentId,
+                                    "status": parseData.data.status
+                                }
+                            })))
+                        }
+                    } else {
+                        ws.send(JSON.stringify({
+                            "event": "ERROR",
+                            "data": {
+                                "message": "You're not a class teacher"
+                            }
+                        }))
+                    }
+                    break
+                    case "TODAY_SUMMARY":
+                        if(ws.role == "teacher" && ws.role.userId === activeSession?.teacherId) {
+                            const classDb = await ClassModel.findOne({
+                                _id: activeSession?.classId
+                            }) 
+
+                            const total = classDb?.studentIds.length ?? 0
+                            const present = Object.keys(activeSession?.attendance || []).filter(p => activeSession?.attendance[p] === "present").length
+                            const absent = total - present
+                            
+                            allWs.map(ws => ws.send(JSON.stringify({
+                                "event": "TODAY_SUMMARY",
+                                "data": {
+                                    present,
+                                    absent,
+                                    total
+                                }
+                            })))
+                        } else {
+                            ws.send(JSON.stringify({
+                                "event": "ERROR",
+                                "data": {
+                                    "message": "You're not a class teacher"
+                                }
+                            }))
+                        }
+                        break
+                        case "MY_ATTENDANCE":
+                            if(ws.user.role == "student") {
+                                const status = activeSession?.attendance[ws.user.userId]
+
+                                if(status) {
+                                    ws.send(JSON.stringify({
+                                        "event": "MY_ATTENDANCE",
+                                        "data": {
+                                            "status": "present"
+                                        }}
+                                    ))
+                                } else {
+                                    ws.send(JSON.stringify({
+                                        "event": "MY_ATTENDANCE",
+                                        "data": {
+                                            "status": "not yet updated"
+                                        }}
+                                    ))
+                                }
+                            }
+                            break;
+                            case "DONE":
+                                if(ws.role == "teacher" && ws.role.userId === activeSession?.teacherId) {
+                                    const classDb = await ClassModel.findOne({
+                                        _id: activeSession?.classId
+                                    }) 
+        
+                                    const total = classDb?.studentIds.length ?? 0
+                                    const present = Object.keys(activeSession?.attendance || []).filter(p => activeSession?.attendance[p] === "present").length
+                                    const absent = total - present
+
+                                    const promises = classDb?.studentIds.map( async studentId => {
+                                        await AttendanceModel.create({
+                                            studentId,
+                                            status: Object.keys(activeSession?.attendance || []).find(s => s === studentId.toString()) ? "present" : "absent"
+                                        })
+                                    }) || []
+                                    await Promise.all(promises)
+                                    activeSession = null
+                                    allWs.map(ws => ws.send(JSON.stringify({
+                                        "event": "DONE",
+                                        "data": {
+                                            "message": "Data persisted",
+                                            present,
+                                            absent,
+                                            total
+                                        }
+                                    })))
+                                } else {
+                                    ws.send(JSON.stringify({
+                                        "event": "ERROR",
+                                        "data": {
+                                            "message": "You're not a class teacher"
+                                        }
+                                    }))
+                                }
+
+                            break
+                    default:
+                        console.log("message not found")
+                }
+            })
+        } catch (error) {
+        ws.send(JSON.stringify({
+            "event": "ERROR",
+            "data": {
+                "message": "You're not a class teacher"
+            }
+        }))
+        ws.close()
+    }
+})
 
 app.use(express.json())
 
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
     res.send(`hi, you're on the home page`);
@@ -29,7 +181,7 @@ app.post("/auth/signup", async (req, res) => {
         return
     }
 
-    const alreadyexistedUser = await userModel.findOne({
+    const alreadyexistedUser = await UserModel.findOne({
         email: data.email
     })
 
@@ -41,14 +193,14 @@ app.post("/auth/signup", async (req, res) => {
         return
     }
 
-    const userDb = await userModel.create({
+    const userDb = await UserModel.create({
         name: data.name,
         email: data.email,
         password: data.password
     })
 
 
-    res.json({
+    res.status(201).json({
         "success": true,
         data: {
             _id: userDb._id,
@@ -72,7 +224,7 @@ app.post("/auth/login", async(req, res) => {
         return
     }
 
-    const userDb = await userModel.findOne({
+    const userDb = await UserModel.findOne({
         email: data.email
     })
 
@@ -89,7 +241,7 @@ app.post("/auth/login", async(req, res) => {
         userId: userDb._id
     }, process.env.JWT_SECRET!)
 
-    res.json({
+    res.status(200).json({
         "success": true,
         "data": {
             "token": token
@@ -98,7 +250,7 @@ app.post("/auth/login", async(req, res) => {
 })
 
 app.post("/me", authMiddleware, async (req, res) => {
-    const userDb = await userModel.findOne({
+    const userDb = await UserModel.findOne({
         _id: req.userId,
     })
 
@@ -110,7 +262,7 @@ app.post("/me", authMiddleware, async (req, res) => {
         return
     }
 
-    res.json({
+    res.status(200).json({
         "success": true,
         "data": {
             "_id": userDb._id,
@@ -132,13 +284,13 @@ app.post("/class", authMiddleware, teacherRoleMiddleware, async (req, res) => {
         return
     }
 
-    const classDb = await classModel.create({
+    const classDb = await ClassModel.create({
         className: data.className,
         teacherId: req.userId,
         studentIds: []
     })
 
-    res.json({
+    res.status(201).json({
         success: true,
         "data": {
             "_id": classDb._id,
@@ -170,7 +322,7 @@ app.post("/class/:id/add-student", authMiddleware, teacherRoleMiddleware, async 
         return
     }
     
-    const classDb = await classModel.findOne({
+    const classDb = await ClassModel.findOne({
         _id: req.params._id
     })
     
@@ -190,7 +342,7 @@ app.post("/class/:id/add-student", authMiddleware, teacherRoleMiddleware, async 
         return
     }
 
-    const userDb = await userModel.findOne({
+    const userDb = await UserModel.findOne({
         _id: studentId
     })
 
@@ -205,7 +357,7 @@ app.post("/class/:id/add-student", authMiddleware, teacherRoleMiddleware, async 
     classDb.studentIds.push(new mongoose.Types.ObjectId(studentId))
     await classDb.save()
 
-    res.json({
+    res.status(200).json({
         success: true,
         "data": {
             "_id": classDb._id,
@@ -217,7 +369,7 @@ app.post("/class/:id/add-student", authMiddleware, teacherRoleMiddleware, async 
 })
 
 app.get("/class/:id", authMiddleware, async (req, res) => {
-    const classDb = await classModel.findOne({
+    const classDb = await ClassModel.findOne({
         _id: req.params._id
     })
 
@@ -230,7 +382,7 @@ app.get("/class/:id", authMiddleware, async (req, res) => {
     }
 
     if(classDb.teacherId === req.userId || classDb.studentIds.map(x => x.toString()).includes(req.userId!)) {
-        const students = await userModel.find({
+        const students = await UserModel.find({
             _id: classDb.studentIds
         })
 
@@ -257,7 +409,7 @@ app.get("/class/:id", authMiddleware, async (req, res) => {
 })
 
 app.get("/students", authMiddleware, teacherRoleMiddleware, async (req, res) => {
-    const users = await userModel.find({
+    const users = await UserModel.find({
         role: "student"
     })
 
@@ -275,13 +427,13 @@ app.get("/class/:id/my-attendence", authMiddleware, async (req, res) => {
     const classId = req.params._id
     const userId = req.userId
 
-    const attendence = await attendenceModel.findOne({
+    const attendence = await AttendanceModel.findOne({
         classId,
         studentId: userId
     })
 
     if(!attendence) {
-        res.json({
+        res.status(200).json({
             "success": true,
             "data": {
                 "classId": classId,
@@ -289,7 +441,7 @@ app.get("/class/:id/my-attendence", authMiddleware, async (req, res) => {
             }
         })
     } else {
-        res.json({
+        res.status(200).json({
             "success": true,
             "data": {
                 "classId": classId,
@@ -310,14 +462,22 @@ app.post("/attendence/start", authMiddleware, teacherRoleMiddleware, async(req, 
         return
     }
 
-    const classDb = await classModel.findOne({
+    const classDb = await ClassModel.findOne({
         _id: data.classId
     })
 
+    // if(!classDb) {
+    //     res.status(400).json({
+    //         success: false,
+    //         "error": "Missing class Id"
+    //     })
+    //     return
+    // }
+
     if(!classDb || classDb.teacherId !== req.userId) {
-        res.status(401).json({
+        res.status(403).json({
             success: false,
-            "error": "Forbidden, not class teacher"
+            "error": "Forbidden, not class teacher or missing classId"
         })
         return
     }
@@ -325,10 +485,12 @@ app.post("/attendence/start", authMiddleware, teacherRoleMiddleware, async(req, 
     activeSession = {
         classId: classDb._id.toString(),
         startedAt: new Date(),
-        attendence: {}
+        attendance: {},
+        teacherId: classDb.teacherId
     }
 
-    res.json({
+
+    res.status(200).json({
         "success": true,
         "data": {
             "classId": classDb._id,

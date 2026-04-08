@@ -41,7 +41,7 @@ const attendenceSchema = new mongoose.Schema({
 })
 
 
-export const userModel = mongoose.model("Users", userSchema)
-export const classModel = mongoose.model("Classes", classSchema)
-export const attendenceModel = mongoose.model("Attendences", attendenceSchema)
+export const UserModel = mongoose.model("Users", userSchema)
+export const ClassModel = mongoose.model("Classes", classSchema)
+export const AttendanceModel = mongoose.model("Attendences", attendenceSchema)
 

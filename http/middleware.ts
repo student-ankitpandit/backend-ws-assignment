@@ -1,7 +1,7 @@
 import type {NextFunction, Request, Response} from "express"
 import jwt, { type JwtPayload } from "jsonwebtoken"
 
-export const authMiddleware = (req: Request, res: Response, next: NextFunction) {
+export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
     const token = req.headers.authorization
 
     if(!token) {
@@ -29,7 +29,7 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
 
 }
 
-export const teacherRoleMiddleware = (req: Request, res: Response, next: NextFunction) {
+export const teacherRoleMiddleware = (req: Request, res: Response, next: NextFunction) => {
     if(req.role || req.role != "teacher") {
         res.status(403).json({
             "success": false,
@@ -37,6 +37,7 @@ export const teacherRoleMiddleware = (req: Request, res: Response, next: NextFun
           })
         return
     }
+    next()
 }
 
 
