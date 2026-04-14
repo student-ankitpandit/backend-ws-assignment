@@ -25,7 +25,7 @@ const classSchema = new mongoose.Schema({
     ]
 })
 
-const attendenceSchema = new mongoose.Schema({
+const attendanceSchema = new mongoose.Schema({
     classId: {
         type: mongoose.Types.ObjectId,
         ref: "Classes"
@@ -43,5 +43,5 @@ const attendenceSchema = new mongoose.Schema({
 
 export const UserModel = mongoose.model("Users", userSchema)
 export const ClassModel = mongoose.model("Classes", classSchema)
-export const AttendanceModel = mongoose.model("Attendences", attendenceSchema)
+export const AttendanceModel = mongoose.model("Attendances", attendanceSchema)
 
