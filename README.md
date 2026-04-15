@@ -21,7 +21,7 @@ Backend (`http/`):
 
 Tests (`mid-test/`):
 - Test runner: Vitest
-- WebSocket client: ws
+- WebSocket client: ws (https://github.com/rahul-MyGit/mid-test)
 
 ## Backend Overview (`http/`)
 
