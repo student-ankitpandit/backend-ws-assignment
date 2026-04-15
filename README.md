@@ -4,6 +4,12 @@ This workspace contains:
 - an Express + WebSocket backend service
 - an external black-box test suite used to validate behavior
 
+## Prerequisites
+
+- Node.js 18+ 
+- Your server must be running on `http://localhost:3000` (or configure via environment variables)
+- MongoDB must be connected to your server
+
 ## Workspace Structure
 
 - `http/` - backend API and WebSocket server
@@ -137,37 +143,22 @@ bun install
 bun test
 ```
 
-Optional environment overrides:
+### Run test in watch mode (for development)
 
 ```bash
-SERVER_URL=http://localhost:4000 WS_URL=ws://localhost:4000/ws bun test
-```
-
-### Run `mid-test` Against Dockerized Backend + MongoDB
-
-1. Start containers from root:
-
-```bash
-docker compose up --build -d
-```
-
-2. Run tests from `mid-test/`:
-
-```bash
-bun install
-bun test
-```
-
-3. If needed, force explicit URLs:
-
-```bash
-SERVER_URL=http://localhost:3000 WS_URL=ws://localhost:3000/ws bun test
+npm run test:watch
 ```
 
 Notes for `mid-test`:
 - Tests assume backend HTTP on `3000`
 - Tests assume WebSocket endpoint `/ws`
 - MongoDB is expected to be available; with Docker compose it is provided on default port `27017`
+
+Optional environment overrides:
+
+```bash
+SERVER_URL=http://localhost:4000 WS_URL=ws://localhost:4000/ws bun test
+```
 
 ## Response Conventions
 
